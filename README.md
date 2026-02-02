@@ -35,11 +35,11 @@ rc.in <== safeAmount;
 
 
 // Logic uses amount directly
-component Lq = LessEq(nBits);
+component Lq = LessEq(32);
 Lq.in[0] <== amount;
 Lq.in[1] <== balance;
 
-ok <== Lq.out
+ok <== Lq.out;
 ```
 In this circuit, the intention is to verify that Alice’s transfer `amount` is less than or equal to her actual `balance`, while also ensuring that the transfer amount is properly range-bounded.
 
@@ -64,17 +64,17 @@ An under-constrained circuit is when one or more signals (inputs, intermediates,
 
 ### Common Causes:
 
-1) Unconstrained inputs: Inputs that never appear in any constraint
+1- Unconstrained inputs: Inputs that never appear in any constraint
 
-2) Unconstrained outputs: Outputs declared but not tied to internal computation
+2- Unconstrained outputs: Outputs declared but not tied to internal computation
 
-3) Dangling signals: Signals assigned (<==) but never constrained, or constrained but never assigned
+3- Dangling signals: Signals assigned (<==) but never constrained, or constrained but never assigned
 
-4) Partial constraints: Only some relationships are enforced (e.g., checking a*b=c but not constraining a or b)
+4- Partial constraints: Only some relationships are enforced (e.g., checking a*b=c but not constraining a or b)
 
-5) Missing range checks: Assuming a value is boolean or within a range without enforcing it
+5- Missing range checks: Assuming a value is boolean or within a range without enforcing it
 
-6) Incorrect conditionals: Using if or ternary logic that affects assignments but not constraints
+6- Incorrect conditionals: Using if or ternary logic that affects assignments but not constraints
 
 
 ### Example:
@@ -96,10 +96,10 @@ If `flag = 1` → `out = a`
 
 If `flag = 0` → `out = b`
 
-As the circuit assumes that `flag` is a boolean value so without an explicit boolean constraint, the prover can choose any field element for `flag`
+The circuit assumes that `flag` is a boolean value. Without an explicit boolean constraint, the prover can choose any field element for `flag`.
 
 ### The fix:
 
 Add `flag * (flag - 1) === 0;`
 
-[Real world under constraint bug](https://zokyo-auditing-tutorials.gitbook.io/zokyo-tutorials/tutorial-16-zero-knowledge-zk/bugs-in-the-wild/maci-1.0-under-constrained-circuit?utm_source=chatgpt.com)
+[Real world under constraint bug](https://zokyo-auditing-tutorials.gitbook.io/zokyo-tutorials/tutorial-16-zero-knowledge-zk/bugs-in-the-wild/maci-1.0-under-constrained-circuit)
