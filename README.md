@@ -3,6 +3,7 @@
 ## Table of Contents
    1. [Dangling Signal](#1-dangling-signal)
    2. [Under Constraint Circuit](#2-under-constraint-circuit)
+   3. [Arithmetic Under Flows](3-arithmetic-under-flows)
 
 ## 1. Dangling Signal 
 ### Definition:
@@ -103,3 +104,67 @@ The circuit assumes that `flag` is a boolean value. Without an explicit boolean 
 Add `flag * (flag - 1) === 0;`
 
 [Real world under constraint bug](https://zokyo-auditing-tutorials.gitbook.io/zokyo-tutorials/tutorial-16-zero-knowledge-zk/bugs-in-the-wild/maci-1.0-under-constrained-circuit)
+
+## 3. Arithmetic Under Flow
+### Description
+
+All arithmetic operations in Circom are evaluated over a finite field. As a result, addition, subtraction, and multiplication are performed modulo the field prime, not over bounded integers. If integer bounds are not explicitly enforced, arithmetic that is intended to model integer semantics may silently overflow or underflow while still satisfying all circuit constraints.
+
+### Why this matters
+
+In many circuits (balances, transfers, counters, indices), correctness relies on integer arithmetic, not field arithmetic. However, Circom does not distinguish between these two models unless explicitly instructed to do so via constraints.
+
+A prover can therefore supply field elements that satisfy all arithmetic constraints modulo the field, yet violate the intended integer semantics.
+
+The verifier has no way to detect this unless bounds are explicitly enforced.
+
+Example:
+
+```circom
+
+signal input balance;
+signal input amount;
+signal output balanceAfter;
+
+balanceAfter <== balance - amount;
+```
+#### Intended semantics:
+`balance ≥ amount`
+
+`balanceAfter ≥ 0`
+#### Enforced semantics:
+
+`balanceAfter ≡ balance − amount (mod p)`
+
+If `amount > balance`, the subtraction underflows under integer semantics but remains valid in the field:
+```circom
+balanceAfter = p − (balance − amount)
+balanceAfter = p - (-amountAfterSub)
+balanceAfter = p + amountAfterSub
+```
+All constraints are satisfied, yet the circuit proves an invalid state transition.
+
+### How to fix:
+
+```circom
+signal input balance;
+signal input amount;
+signal output balanceAfter;
+
+// Range checks
+component rcBalance = Num2Bits(nBits);
+rcBalance.in <== balance;
+
+component rcAmount = Num2Bits(nBits);
+rcAmount.in <== amount;
+
+// Ensure subtraction is safe
+component le = LessEq(nBits);
+le.in[0] <== amount;
+le.in[1] <== balance;
+
+// Compute balance safely
+balanceAfter <== balance - amount;
+```
+`Num2Bits(nBits)` ensures that `amount` is a non-negative integer. Without it, a prover can set `amount = p − 1` (i.e., `−1` modulo the field), bypass the comparison, and trigger an integer underflow masked by field arithmetic.
+
