@@ -1,4 +1,4 @@
-# Circom-Security
+F# Circom-Security
 
 ## Table of Contents
    1. [Dangling Signal](#1-dangling-signal)
@@ -130,11 +130,11 @@ signal output balanceAfter;
 
 balanceAfter <== balance - amount;
 ```
-#### Intended semantics
+#### Intended semantics:
 `balance ≥ amount`
 
 `balanceAfter ≥ 0`
-#### Enforced semantics
+#### Enforced semantics:
 
 `balanceAfter ≡ balance − amount (mod p)`
 
@@ -181,7 +181,7 @@ Circom circuits frequently rely on bit length assumptions to enforce integer sem
 ### Root Cause
 Range checks in Circom only constrain a value to the range `[0, 2^n)` for the specific `n` used. If a signal is later used in a component that assumes a larger bit width, the circuit implicitly allows values outside the originally intended range. Because Circom operates over a finite field, these excess bits do not cause a failure and may silently affect arithmetic or comparison results.
 
-### Example:
+### Example
 ```circom
 signal input amount;
 signal input balance;
@@ -201,7 +201,7 @@ out <== le.out;
 
 In this example, `amount` is constrained to `[0, 2^32)`, but the comparison logic assumes 64-bit operands. The higher 32 bits of `amount` are implicitly assumed to be zero, yet this assumption is never enforced for `balance`. If `balance` is not range-checked consistently, the comparison may succeed or fail in unexpected ways depending on unconstrained higher-order bits.
 
-### The fix:
+### The fix
 Ensure that all signals participating in the same arithmetic or comparison are range-checked using the same bit length.
 
 ``` circom
