@@ -1,17 +1,18 @@
-# Circom-Security
+F# Circom-Security
 
 ## Table of Contents
    1. [Dangling Signal](#1-dangling-signal)
    2. [Under Constraint Circuit](#2-under-constraint-circuit)
    3. [Arithmetic Underflow](#3-arithmetic-underflow)
    4. [Mismatching Bit Length](#4-mismatching-bit-length)
+   5. [Assigned but Not Constrained](#5-assigned-but-not-constrained)
 
 ## 1. Dangling Signal 
-### Definition:
+### Definition
 
 Unused or dangling signals are variables that are declared but never actually used in any computation or constraint. They can indicate mistakes, unnecessary complexity, or potential logical errors in the circuit.
 
-### What to look for:
+### What to look for
 
 1- Signals declared but never assigned a value.
 
@@ -19,7 +20,7 @@ Unused or dangling signals are variables that are declared but never actually us
 
 3- Signals that may have been intended for a computation but were forgotten.
 
-### Example:
+### Example
 
 ```circom
 // This circuit is created by me for explanation
@@ -51,7 +52,7 @@ However, when performing the comparison, the circuit mistakenly uses the origina
 
 As a result, the range check is not applied to the value that actually participates in the comparison.
 
-### Why this is dangerous:
+### Why this is dangerous
 
 `safeAmount` is correctly range-checked
 
@@ -60,11 +61,11 @@ The comparison logic relies on `amount`, not the range-checked signal
 Therefore, the verifier does not enforce that the compared value is within 32 bits
 
 ## 2. Under Constraint Circuit
-### Definition:
+### Definition
 
 An under-constrained circuit is when one or more signals (inputs, intermediates, or outputs) are not sufficiently constrained, allowing the prover to assign arbitrary values while still producing a valid proof.
 
-### Common Causes:
+### Common Causes
 
 1- Unconstrained inputs: Inputs that never appear in any constraint
 
@@ -79,7 +80,7 @@ An under-constrained circuit is when one or more signals (inputs, intermediates,
 6- Incorrect conditionals: Using if or ternary logic that affects assignments but not constraints
 
 
-### Example:
+### Example
 
 ```circom
 signal input a;
@@ -100,7 +101,7 @@ If `flag = 0` → `out = b`
 
 The circuit assumes that `flag` is a boolean value. Without an explicit boolean constraint, the prover can choose any field element for `flag`.
 
-### The fix:
+### The fix
 
 Add `flag * (flag - 1) === 0;`
 
@@ -119,7 +120,7 @@ A prover can therefore supply field elements that satisfy all arithmetic constra
 
 The verifier has no way to detect this unless bounds are explicitly enforced.
 
-### Example:
+### Example
 
 ```circom
 
@@ -147,7 +148,7 @@ This results in a large field element close to `p`, rather than a negative numbe
 
 All constraints are satisfied, yet the circuit proves an invalid state transition.
 
-### How to fix:
+### The fix
 Without proper range checks, `amount` and `balance` may not represent valid non-negative integers.  
 Using `Num2Bits(nBits)` ensures that `amount` is constrained to a valid non-negative integer range.
 
@@ -180,7 +181,7 @@ Circom circuits frequently rely on bit length assumptions to enforce integer sem
 ### Root Cause
 Range checks in Circom only constrain a value to the range `[0, 2^n)` for the specific `n` used. If a signal is later used in a component that assumes a larger bit width, the circuit implicitly allows values outside the originally intended range. Because Circom operates over a finite field, these excess bits do not cause a failure and may silently affect arithmetic or comparison results.
 
-### Example:
+### Example
 ```circom
 signal input amount;
 signal input balance;
@@ -200,7 +201,7 @@ out <== le.out;
 
 In this example, `amount` is constrained to `[0, 2^32)`, but the comparison logic assumes 64-bit operands. The higher 32 bits of `amount` are implicitly assumed to be zero, yet this assumption is never enforced for `balance`. If `balance` is not range-checked consistently, the comparison may succeed or fail in unexpected ways depending on unconstrained higher-order bits.
 
-### How to fix:
+### The fix
 Ensure that all signals participating in the same arithmetic or comparison are range-checked using the same bit length.
 
 ``` circom
@@ -222,3 +223,56 @@ le.in[1] <== balance;
 
 ok <== le.out;
 ```
+
+## 5. Assigned but Not Constrained
+### Description
+In Circom, signals may be assigned values without being properly constrained. A common pitfall occurs when a signal is set using the assignment operator `<--`, but no constraint actually enforces the intended relationship in the circuit. Since Circom is declarative and operates over a finite field, assigning a value does not, by itself, guarantee correctness unless it is backed by explicit constraints.
+
+### Root Cause
+Developers may incorrectly assume that assigning a signal using `<==` always enforces the expected semantics. However, if the assigned signal is never used in a constraint that restricts its value, the prover is free to assign any value that satisfies the remaining constraints. This often results from unused intermediate signals, forgotten equality checks, or logic that references a different signal than the one that was constrained.
+
+### Example
+```circom
+template Assign() {
+    signal input bool;
+    signal output out;
+    
+    signal internal;
+
+    internal <-- bool != 0 ? 1 : 0;
+
+    out <== internal;
+}
+
+component main = Assign();
+
+/* INPUT = {
+    "bool": "1"
+} */
+```
+in this example, the line
+`internal <-- bool != 0 ? 0 : 1;`
+uses a conditional expression, but it only assigns a value to `internal` without enforcing any constraint.
+
+As a result, `internal` is not constrained by the circuit logic. A dishonest prover can generate a valid witness and then manually modify the value of `internal` in the `witness.wtns` file to either `0` or `1`, regardless of the value of bool.
+
+Since no constraint ties `internal` to `bool`, the modified witness will still satisfy all enforced constraints, allowing the prover to produce a forged proof.
+
+### output
+```
+non-linear constraints: 0
+linear constraints: 0
+public inputs: 0
+public outputs: 1
+private inputs: 1
+private outputs: 0
+wires: 2
+labels: 4
+```
+As shown above, no linear or non-linear constraints were generated.
+Although the circuit compiles successfully and produces an output (`out = 1`), this output is not enforced by any constraint. Consequently, the circuit proves no relationship between the input and the output, leaving the witness fully controlled by the prover.
+
+### The Fix
+In our example, we were trying to determine whether a given value is zero. The most secure way to achieve this is to use the `IsZero` template from Circomlib.
+
+For all other logic, it is essential to enforce constraints on the outputs of conditional expressions.
